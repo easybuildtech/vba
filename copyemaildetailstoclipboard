@@ -1,0 +1,111 @@
+#If VBA7 Then
+    Private Declare PtrSafe Function OpenClipboard Lib "user32" (ByVal hwnd As LongPtr) As Long
+    Private Declare PtrSafe Function EmptyClipboard Lib "user32" () As Long
+    Private Declare PtrSafe Function CloseClipboard Lib "user32" () As Long
+    Private Declare PtrSafe Function SetClipboardData Lib "user32" (ByVal wFormat As Long, ByVal hMem As LongPtr) As LongPtr
+    Private Declare PtrSafe Function GlobalAlloc Lib "kernel32" (ByVal wFlags As Long, ByVal dwBytes As LongPtr) As LongPtr
+    Private Declare PtrSafe Function GlobalLock Lib "kernel32" (ByVal hMem As LongPtr) As LongPtr
+    Private Declare PtrSafe Function GlobalUnlock Lib "kernel32" (ByVal hMem As LongPtr) As Long
+    Private Declare PtrSafe Function lstrcpy Lib "kernel32" (ByVal lpString1 As Any, ByVal lpString2 As Any) As LongPtr
+#Else
+    Private Declare Function OpenClipboard Lib "user32" (ByVal hwnd As Long) As Long
+    Private Declare Function EmptyClipboard Lib "user32" () As Long
+    Private Declare Function CloseClipboard Lib "user32" () As Long
+    Private Declare Function SetClipboardData Lib "user32" (ByVal wFormat As Long, ByVal hMem As Long) As Long
+    Private Declare Function GlobalAlloc Lib "kernel32" (ByVal wFlags As Long, ByVal dwBytes As Long) As Long
+    Private Declare Function GlobalLock Lib "kernel32" (ByVal hMem As Long) As Long
+    Private Declare Function GlobalUnlock Lib "kernel32" (ByVal hMem As Long) As Long
+    Private Declare Function lstrcpy Lib "kernel32" (ByVal lpString1 As Any, ByVal lpString2 As Any) As Long
+#End If
+
+Const CF_TEXT As Long = 1
+Const GMEM_MOVEABLE As Long = &H2
+
+Sub CopyEmailDetailsToClipboard()
+    Dim olApp As Outlook.Application
+    Dim olNamespace As Outlook.NameSpace
+    Dim olMail As Outlook.MailItem
+    Dim senderEmail As String
+    Dim receivedDate As String
+    Dim subject As String
+    Dim emailDetails As String
+    Dim emailBody As String
+    Dim first250Words As String
+    
+    ' Initialize Outlook application
+    Set olApp = New Outlook.Application
+    Set olNamespace = olApp.GetNamespace("MAPI")
+    
+    ' Prompt user to select an email
+    Set olMail = olApp.ActiveExplorer.Selection.Item(1)
+    
+    If Not olMail Is Nothing Then
+        ' Get the sender email, received date, and subject
+        If olMail.SenderEmailType = "EX" Then
+            senderEmail = olMail.Sender.GetExchangeUser().PrimarySmtpAddress
+        Else
+            senderEmail = olMail.SenderEmailAddress
+        End If
+        receivedDate = Format(olMail.ReceivedTime, "yyyy/mm/dd")
+        subject = olMail.subject
+        
+        ' Get the first 250 words of the email body
+        emailBody = olMail.Body
+        first250Words = GetFirstNWords(emailBody, 250)
+        
+        ' Format the details for search
+        emailDetails = "SEARCH STRING ->  from:""" & senderEmail & """ received:" & receivedDate & " subject:""" & subject & """ body:""" & first250Words & """"
+
+        
+        ' Copy to clipboard using Windows API
+        CopyToClipboard emailDetails
+        
+        'MsgBox "Email details copied to clipboard:" & vbCrLf & emailDetails, vbInformation
+        MsgBox "Email details copied to clipboard, now past in your task manager!"
+        
+    Else
+        MsgBox "No email selected. Please select an email and try again.", vbExclamation
+    End If
+    
+    ' Clean up
+    Set olMail = Nothing
+    Set olNamespace = Nothing
+    Set olApp = Nothing
+End Sub
+
+Function GetFirstNWords(text As String, n As Long) As String
+    Dim words() As String
+    words = Split(text, " ")
+    If UBound(words) + 1 > n Then
+        GetFirstNWords = Join(Application.WorksheetFunction.Index(words, 1, 0, n), " ")
+    Else
+        GetFirstNWords = text
+    End If
+End Function
+
+Sub CopyToClipboard(text As String)
+    Dim hGlobal As LongPtr
+    Dim lpGlobal As LongPtr
+    
+    ' Allocate global memory
+    hGlobal = GlobalAlloc(GMEM_MOVEABLE, Len(text) + 1)
+    If hGlobal <> 0 Then
+        ' Lock the global memory
+        lpGlobal = GlobalLock(hGlobal)
+        If lpGlobal <> 0 Then
+            ' Copy the text to the global memory
+            lstrcpy lpGlobal, text
+            ' Unlock the global memory
+            GlobalUnlock hGlobal
+            ' Open the clipboard
+            If OpenClipboard(0) <> 0 Then
+                ' Empty the clipboard
+                EmptyClipboard
+                ' Set the clipboard data
+                SetClipboardData CF_TEXT, hGlobal
+                ' Close the clipboard
+                CloseClipboard
+            End If
+        End If
+    End If
+End Sub
